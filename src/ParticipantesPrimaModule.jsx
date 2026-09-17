@@ -1,0 +1,15 @@
+import React,{useState} from 'react';
+import PadronModule from './PadronModule';
+import AltaCopiarPegarPadron from './AltaCopiarPegarPadron';
+import ExpedientesParticipantes from './ExpedientesParticipantes';
+const green='#31533a',bright='#3dad2d',border='#dfe5dc',muted='#667268';
+const btn=(active=false)=>({border:0,borderRadius:9,padding:'10px 13px',fontWeight:900,cursor:'pointer',background:active?bright:'#e8eee6',color:active?'#fff':green});
+const card={background:'#fff',border:`1px solid ${border}`,borderRadius:12,padding:14};
+export default function ParticipantesPrimaModule({onGoProgramas}){
+ const [drawer,setDrawer]=useState('entrada'),[method,setMethod]=useState('individual'),[refresh,setRefresh]=useState(0);
+ const choose=(m,id)=>{setMethod(m);setTimeout(()=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'}),80)};
+ return <div><div style={{background:'#eef2ec',border:`1px solid ${border}`,borderRadius:16,padding:12,marginBottom:14}}><div style={{fontSize:11,fontWeight:900,color:muted,textTransform:'uppercase',letterSpacing:1}}>Cajón 1</div><h1 style={{margin:'2px 0 10px',color:green,fontSize:24}}>Participantes de la Prima</h1><div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:8}}><button style={btn(drawer==='entrada')} onClick={()=>setDrawer('entrada')}>↓ Entrada · Registro de participantes</button><button style={btn(drawer==='salida')} onClick={()=>setDrawer('salida')}>↑ Salida · Expedientes de participantes</button></div></div>
+ {drawer==='entrada'?<div><div style={{...card,marginBottom:12}}><b style={{color:green}}>Formas de entrada al padrón</b><div style={{fontSize:12,color:muted,margin:'3px 0 9px'}}>Las cuatro vías terminan en el mismo padrón y utilizan la misma lógica de ID de participante.</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}><button style={btn(method==='individual')} onClick={()=>choose('individual','alta-individual-padron')}>1. Registro individual</button><button style={btn(method==='plantilla')} onClick={()=>choose('plantilla','alta-plantilla-padron')}>2. Importar plantilla Excel</button><button style={btn(method==='copiar')} onClick={()=>setMethod('copiar')}>3. Copiar y pegar</button><button style={btn(method==='programas')} onClick={()=>setMethod('programas')}>4. Desde Programas</button></div></div>
+ {method==='copiar'?<AltaCopiarPegarPadron onDone={()=>setRefresh(x=>x+1)}/>:method==='programas'?<div style={card}><h3 style={{margin:'0 0 5px',color:green}}>Alta desde Programas</h3><div style={{fontSize:13,lineHeight:1.6}}>Cuando una actividad recibe a un colaborador que no existe en el padrón, NODO lo conserva dentro de la actividad con estatus <b>No registrado</b>. Desde esa misma fila se puede usar <b>Agregar al padrón</b>; el sistema solicita el centro cuando haga falta, genera el ID y actualiza la actividad sin capturar de nuevo a la persona.</div><button style={{...btn(true),marginTop:10}} onClick={onGoProgramas}>Ir a Programas y actividades</button></div>:<PadronModule key={refresh}/>}</div>:<ExpedientesParticipantes/>}
+ </div>;
+}

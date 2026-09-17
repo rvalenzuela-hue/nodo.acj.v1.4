@@ -1,0 +1,57 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/send-expense-email",
+        "function": {
+          "functionId": "sendExpenseEmail",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/send-acta-email",
+        "function": {
+          "functionId": "sendActaEmail",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/manage-signer",
+        "function": {
+          "functionId": "manageSigner",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/signing-pin",
+        "function": {
+          "functionId": "signingPin",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/sign-acta",
+        "function": {
+          "functionId": "signActa",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "functions": {
+    "source": "functions"
+  }
+}

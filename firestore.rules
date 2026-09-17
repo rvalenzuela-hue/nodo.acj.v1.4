@@ -1,0 +1,142 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function email() { return signedIn() ? request.auth.token.email : ""; }
+    function hasEmailProfile() { return signedIn() && exists(/databases/$(database)/documents/usuarios/$(email())); }
+    function hasUidProfile() { return signedIn() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)); }
+    function hasNodoProfile() { return signedIn() && exists(/databases/$(database)/documents/usuariosNodo/$(email())); }
+    function hasProfile() { return hasEmailProfile() || hasUidProfile(); }
+    function profile() { return hasEmailProfile() ? get(/databases/$(database)/documents/usuarios/$(email())).data : get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function fallbackKnown() { return email() in [
+      "rvalenzuela@fundacionborquezschwarzbeck.org","charo@camposborquez.com",
+      "ybautista@fundacionborquezschwarzbeck.org","preventivocaborca@fundacionborquezschwarzbeck.org",
+      "contacto@fundacionborquezschwarzbeck.org","itomnawam@fundacionborquezschwarzbeck.org"
+    ]; }
+    function isSigner() { return signedIn() && hasNodoProfile() && get(/databases/$(database)/documents/usuariosNodo/$(email())).data.activo != false && get(/databases/$(database)/documents/usuariosNodo/$(email())).data.rol == "Firmante"; }
+    function known() { return signedIn() && (hasNodoProfile() ? (get(/databases/$(database)/documents/usuariosNodo/$(email())).data.activo != false && get(/databases/$(database)/documents/usuariosNodo/$(email())).data.rol != "Firmante") : (hasProfile() ? profile().activo != false : fallbackKnown())); }
+    function isAdmin() { return known() && ((hasNodoProfile() && get(/databases/$(database)/documents/usuariosNodo/$(email())).data.rol == "Administrador") || (hasProfile() && profile().rol == "admin") || (!hasProfile() && email() == "rvalenzuela@fundacionborquezschwarzbeck.org")); }
+    function isDirection() { return known() && ((hasProfile() && profile().rol == "direccion") || (!hasProfile() && email() == "charo@camposborquez.com")); }
+    function isManagement() { return isAdmin() || isDirection(); }
+    function canEdit() { return known() && !(hasProfile() && profile().soloLectura == true); }
+    function canManageExpenses() { return isManagement() || (hasProfile() && profile().gestionarGastos == true); }
+    function canSeeAllExpenses() { return isManagement() || (hasProfile() && profile().verGastos == true); }
+
+    function fallbackArea(areaId) {
+      return isManagement() ||
+        ((email() in ["ybautista@fundacionborquezschwarzbeck.org","preventivocaborca@fundacionborquezschwarzbeck.org","contacto@fundacionborquezschwarzbeck.org","itomnawam@fundacionborquezschwarzbeck.org"]) && areaId in ["AR1","AR2"]);
+    }
+    function areaAllowed(areaId) { return isManagement() || fallbackArea(areaId) || (hasProfile() && areaId in profile().areas); }
+    function associationAllowed(asocId) { return known() && asocId == "A1"; }
+    function fallbackCaptureArea(areaId) {
+      return isManagement() ||
+        ((email() in ["ybautista@fundacionborquezschwarzbeck.org","preventivocaborca@fundacionborquezschwarzbeck.org"]) && areaId == "AR2") ||
+        ((email() in ["contacto@fundacionborquezschwarzbeck.org","itomnawam@fundacionborquezschwarzbeck.org"]) && areaId == "AR1");
+    }
+    function captureAreaAllowed(areaId) {
+      return isManagement() ||
+        (fallbackKnown() && fallbackCaptureArea(areaId)) ||
+        (!fallbackKnown() && hasProfile() && profile().keys().hasAny(["capturaAreas"]) && areaId in profile().capturaAreas) ||
+        (!fallbackKnown() && hasProfile() && !profile().keys().hasAny(["capturaAreas"]) && areaId in profile().areas);
+    }
+    function areaMatchesAssociation(areaId, asocId) {
+      return exists(/databases/$(database)/documents/areas/$(areaId)) && get(/databases/$(database)/documents/areas/$(areaId)).data.asociacionId == asocId;
+    }
+
+    match /usuarios/{id} {
+      allow read: if known() && (request.auth.uid == id || email() == id || isManagement());
+      allow create, update, delete: if isManagement();
+    }
+    match /asociaciones/{id} { allow read: if known(); allow write: if isManagement(); }
+    match /areas/{id} { allow read: if known(); allow write: if isManagement(); }
+
+    match /personas/{id} {
+      allow read: if known() && areaAllowed(resource.data.areaId);
+      allow create: if canEdit() && associationAllowed(request.resource.data.asociacionId) && captureAreaAllowed(request.resource.data.areaId) && areaMatchesAssociation(request.resource.data.areaId, request.resource.data.asociacionId);
+      allow update: if canEdit() && captureAreaAllowed(resource.data.areaId) && captureAreaAllowed(request.resource.data.areaId) && areaMatchesAssociation(request.resource.data.areaId, request.resource.data.asociacionId);
+      allow delete: if canEdit() && captureAreaAllowed(resource.data.areaId);
+    }
+    match /eventos/{id} {
+      allow read: if known() && associationAllowed(resource.data.asociacionId) && (!resource.data.keys().hasAny(["areaId"]) || areaAllowed(resource.data.areaId));
+      allow create: if canEdit() && associationAllowed(request.resource.data.asociacionId) && captureAreaAllowed(request.resource.data.areaId);
+      allow update: if canEdit() && associationAllowed(resource.data.asociacionId) && captureAreaAllowed(resource.data.areaId) && captureAreaAllowed(request.resource.data.areaId);
+      allow delete: if canEdit() && captureAreaAllowed(resource.data.areaId);
+    }
+    match /programas/{id} {
+      allow read: if true;
+      allow create: if isManagement() && associationAllowed(request.resource.data.asociacionId);
+      allow update: if isManagement() && associationAllowed(resource.data.asociacionId) && associationAllowed(request.resource.data.asociacionId);
+      allow delete: if isManagement() && associationAllowed(resource.data.asociacionId);
+    }
+    match /gastos/{id} {
+      allow read: if known() && (canSeeAllExpenses() || associationAllowed(resource.data.asociacionId));
+      allow create: if canEdit() && associationAllowed(request.resource.data.asociacionId) && request.resource.data.estatus == "Pendiente";
+      allow update: if canManageExpenses() && request.resource.data.estatus in ["Pendiente","Aprobado","Pagado","Rechazado"] && (isManagement() || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["estatus"]));
+      allow delete: if isManagement();
+    }
+    match /proveedores/{id} {
+      allow read: if canManageExpenses();
+      allow create, update: if canManageExpenses() && associationAllowed(request.resource.data.asociacionId);
+      allow delete: if isManagement();
+    }
+    match /sigeac_meta/{id} {
+      allow read: if known();
+      allow create: if isManagement() || (canEdit() && request.resource.data.keys().hasOnly(["schemaVersion","consecutivoGlobal","consecutivoGlobalYear","consecutivosPorAnio","fbsConsecutivoActual","fbsConsecutivoAnio","fbsConsecutivosPorAnio","fbsFundacionV2PorAnio","fbsFundacionV2Actual","fbsFundacionV2Anio","updatedAt"]) && request.resource.data.schemaVersion == 2);
+      allow update: if isManagement() || (canEdit() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["consecutivoGlobal","consecutivoGlobalYear","consecutivosPorAnio","fbsConsecutivoActual","fbsConsecutivoAnio","fbsConsecutivosPorAnio","fbsFundacionV2PorAnio","fbsFundacionV2Actual","fbsFundacionV2Anio","updatedAt"]) && request.resource.data.schemaVersion == 2 && resource.data.schemaVersion == 2);
+      allow delete: if isManagement();
+    }
+    match /sigeac/{id} { allow read: if isManagement(); allow write: if false; }
+    match /publicaciones/{id} {
+      allow read: if (resource.data.publico == true && resource.data.estado == "Publicado") || known();
+      allow create, update, delete: if isManagement();
+    }
+    match /participantesPrima/{id} {
+      allow read: if known();
+      allow create, update, delete: if isManagement();
+    }
+    match /padronAuditoria/{id} {
+      allow read: if known();
+      allow create: if isManagement();
+      allow update, delete: if false;
+    }
+    match /nodo_meta/{id} { allow read, write: if isManagement(); }
+    match /evaluacionesNecesidades/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /evaluacionNecesidadesRespuestas/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /planPrima/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /planPrimaProyectos/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /planPrimaBeneficiarioConfig/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /planPrimaBeneficiarios/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /informesProyecto/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /actividades/{id} { allow read: if true; allow create, update, delete: if isManagement(); }
+    match /artefactos/{id} {
+      allow read: if (resource.data.publico == true && resource.data.estado == 'Publicado') || known();
+      allow create, update, delete: if isManagement();
+    }
+    match /solicitudes/{id} {
+      allow create: if request.resource.data.origen == 'Portal público' && request.resource.data.programaId is string && request.resource.data.actividadId is string && request.resource.data.artefactoId is string;
+      allow read, update, delete: if known();
+    }
+    match /indicadoresImpacto/{id} { allow read: if known(); allow create, update, delete: if isManagement(); }
+    match /agendaMesa/{id} { allow read, create, update, delete: if signedIn(); }
+    match /tesoreriaSolicitudes/{id} { allow read: if known(); allow create, update: if known(); allow delete: if isManagement(); }
+    match /minutasMesa/{id} { allow read: if known(); allow create, update: if known(); allow delete: if isManagement(); }
+    match /actaFirmas/{token} {
+      allow get: if true;
+      allow list: if known() || (isSigner() && resource.data.firmanteUid == request.auth.uid);
+      allow create, delete: if known();
+      allow update: if known() || (resource.data.metodo == 'Conformidad electrónica' && resource.data.estado == 'Pendiente' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado','conformidadEn','metodo','declaracionAceptada']) && request.resource.data.estado == 'Conforme' && request.resource.data.declaracionAceptada == true);
+    }
+    match /rezagadosBecas/{id} { allow read, create, update, delete: if known(); }
+    match /solicitudesBecas/{id} {
+      allow create: if true;
+      allow read, update: if known() || id == resource.data.codigoAcceso;
+      allow delete: if isManagement();
+    }
+    match /becaAccesos/{codigo} { allow create, read, update: if true; allow delete: if isManagement(); }
+    match /usuariosNodo/{id} { allow read: if known() || isManagement() || (signedIn() && id == email()); allow write: if isManagement(); }
+    match /expedientesParticipante/{pid}/becas/{id} { allow read, write: if known(); }
+    match /consultorioDental/{id} { allow read, write: if known() && (isManagement() || (hasNodoProfile() && get(/databases/$(database)/documents/usuariosNodo/$(email())).data.alcance in ['Toda la mesa','Consultorio Dental'])); }
+    match /{document=**} { allow read, write: if false; }
+    match /planPrimaArchivoAnual/{id} { allow read, write: if signedIn(); }
+  }
+}
