@@ -1,11 +1,12 @@
 import {auth} from '../firebase';
 
 const PROJECT_ID=import.meta.env.VITE_FIREBASE_PROJECT_ID || 'sigeac-1fc0c';
-const REGION='us-central1';
+const REGION=import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1';
+const FUNCTION_BASE=(import.meta.env.VITE_FIREBASE_FUNCTIONS_BASE_URL || `https://${REGION}-${PROJECT_ID}.cloudfunctions.net`).replace(/\/$/,'');
 const DIRECT={
-  '/api/manage-signer':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/manageSigner`,
-  '/api/signing-pin':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/signingPin`,
-  '/api/sign-acta':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/signActa`,
+  '/api/manage-signer':`${FUNCTION_BASE}/manageSigner`,
+  '/api/signing-pin':`${FUNCTION_BASE}/signingPin`,
+  '/api/sign-acta':`${FUNCTION_BASE}/signActa`,
 };
 
 async function request(url,idToken,body,timeoutMs=20000){
@@ -37,7 +38,7 @@ async function call(path,body){
     if(DIRECT[path]){
       try{r=await request(DIRECT[path],idToken,body)}catch(e2){
         if(e2?.name==='AbortError')throw new Error('La Function de firma no respondió en 20 segundos.');
-        throw new Error('No fue posible contactar la Function de firma de Firebase. Revisa el despliegue de Functions y CORS.');
+        throw new Error(`No fue posible contactar la Function de Firebase (${DIRECT[path]}). Las Functions de firma deben estar desplegadas en el proyecto ${PROJECT_ID}.`);
       }
     }else throw new Error('No fue posible contactar al servidor de firma.');
   }
