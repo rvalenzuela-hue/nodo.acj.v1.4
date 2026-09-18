@@ -194,7 +194,7 @@ function actaSnapshot(data){return {
 };}
 function documentHash(data){return crypto.createHash('sha256').update(stable(actaSnapshot(data)),'utf8').digest('hex');}
 
-exports.manageSigner=onRequest({region:'us-central1',cors:false,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
+exports.manageSigner=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
   if(req.method!=='POST'){res.set('Allow','POST');return res.status(405).json({ok:false,error:'Método no permitido.'});}
   try{
     const decoded=await verifyBearer(req);if(!(await managerAllowed(decoded)))return res.status(403).json({ok:false,error:'No tienes permiso para administrar cuentas firmantes.'});
@@ -214,7 +214,7 @@ exports.manageSigner=onRequest({region:'us-central1',cors:false,timeoutSeconds:3
   }catch(error){logger.error('manageSigner failed',{message:error?.message,code:error?.code});return res.status(error?.status||500).json({ok:false,error:'No fue posible crear o actualizar la cuenta firmante.'});}
 });
 
-exports.signingPin=onRequest({region:'us-central1',cors:false,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
+exports.signingPin=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
   if(req.method!=='POST'){res.set('Allow','POST');return res.status(405).json({ok:false,error:'Método no permitido.'});}
   try{
     const decoded=await verifyBearer(req),body=req.body&&typeof req.body==='object'?req.body:{};
@@ -229,7 +229,7 @@ exports.signingPin=onRequest({region:'us-central1',cors:false,timeoutSeconds:30,
   }catch(error){logger.error('signingPin failed',{message:error?.message,code:error?.code});return res.status(error?.status||500).json({ok:false,error:error?.status===401?'Sesión no autorizada.':'No fue posible configurar el PIN.'});}
 });
 
-exports.signActa=onRequest({region:'us-central1',cors:false,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
+exports.signActa=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
   if(req.method!=='POST'){res.set('Allow','POST');return res.status(405).json({ok:false,error:'Método no permitido.'});}
   try{
     const decoded=await verifyBearer(req),body=req.body&&typeof req.body==='object'?req.body:{};
@@ -249,9 +249,19 @@ exports.signActa=onRequest({region:'us-central1',cors:false,timeoutSeconds:30,me
     const signatureCode=`NODO-SIG-${signedAt.slice(0,4)}-${rawSig.slice(0,8).toUpperCase()}-${rawSig.slice(8,16).toUpperCase()}-${rawSig.slice(16,24).toUpperCase()}`;
     const firmaNodo={version:'1',method:'Firma electrónica institucional NODO',uid:decoded.uid,usuario,signerName:data.nombre||decoded.name||'',signedAt,documentHash:docHash,signatureDigest:rawSig,signatureCode};
     await db.runTransaction(async tx=>{
-      const fresh=await tx.get(ref);if(!fresh.exists)throw new Error('Firma no disponible.');if(fresh.data()?.estado==='Firmado')throw new Error('El documento ya fue firmado.');
+      const actaRef=db.collection('minutasMesa').doc(data.actaId);
+      // Firestore exige que TODAS las lecturas de una transacción ocurran antes
+      // de la primera escritura. Leemos firma y acta primero y escribimos al final.
+      const [fresh,actaSnap]=await Promise.all([tx.get(ref),tx.get(actaRef)]);
+      if(!fresh.exists)throw new Error('Firma no disponible.');
+      if(fresh.data()?.estado==='Firmado')throw new Error('El documento ya fue firmado.');
+      if(!actaSnap.exists)throw new Error('No se encontró el acta de origen.');
+      const ad=actaSnap.data()||{};
+      if(ad.estado!=='Cerrada')throw new Error('El acta todavía no está cerrada.');
+      if(Number(ad.versionDocumento||0)!==Number(data.versionDocumento||0))throw new Error('La versión asignada ya no coincide con la versión cerrada.');
+      const parts=(ad.participantes||[]).map(p=>p.id===data.participanteId?{...p,firmaEstado:'Firmado',conformidadEn:signedAt,firmaMetodo:'Firma electrónica institucional NODO',firmaNodo}:p);
       tx.set(ref,{estado:'Firmado',conformidadEn:signedAt,metodo:'Firma electrónica institucional NODO',declaracionAceptada:true,firmaNodo},{merge:true});
-      const actaRef=db.collection('minutasMesa').doc(data.actaId),actaSnap=await tx.get(actaRef);if(actaSnap.exists){const ad=actaSnap.data()||{},parts=(ad.participantes||[]).map(p=>p.id===data.participanteId?{...p,firmaEstado:'Firmado',conformidadEn:signedAt,firmaMetodo:'Firma electrónica institucional NODO',firmaNodo}:p);tx.set(actaRef,{participantes:parts,actualizadoEn:signedAt},{merge:true});}
+      tx.set(actaRef,{participantes:parts,actualizadoEn:signedAt},{merge:true});
     });
     logger.info('Acta signed in NODO',{actaId:data.actaId,firmaId,usuario,signatureCode,documentHash:docHash});
     return res.status(200).json({ok:true,signatureCode,documentHash:docHash,firmaNodo});

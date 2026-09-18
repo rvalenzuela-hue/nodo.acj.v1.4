@@ -1,5 +1,21 @@
 import {auth} from '../firebase';
 
+const PROJECT_ID=import.meta.env.VITE_FIREBASE_PROJECT_ID || 'sigeac-1fc0c';
+const REGION='us-central1';
+const DIRECT={
+  '/api/manage-signer':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/manageSigner`,
+  '/api/signing-pin':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/signingPin`,
+  '/api/sign-acta':`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/signActa`,
+};
+
+async function request(url,idToken,body,timeoutMs=20000){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    return await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},body:JSON.stringify(body||{}),signal:controller.signal});
+  }finally{clearTimeout(timeout)}
+}
+
 async function call(path,body){
   const user=auth.currentUser;
   if(!user) throw new Error('La sesión de NODO no está activa. Cierra sesión y vuelve a entrar.');
@@ -7,9 +23,23 @@ async function call(path,body){
   try{idToken=await user.getIdToken();}catch{throw new Error('No fue posible validar la sesión. Cierra sesión y vuelve a entrar.');}
   let r;
   try{
-    r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},body:JSON.stringify(body||{})});
-  }catch{
-    throw new Error('No fue posible contactar al servidor. Revisa tu conexión a internet.');
+    r=await request(path,idToken,body);
+    // Cuando la interfaz vive en GitHub/Vercel u otro hosting, /api/... puede devolver
+    // HTML/404 porque no existen las rewrites de Firebase Hosting. En ese caso usamos
+    // directamente la Cloud Function del proyecto.
+    const ct=String(r.headers.get('content-type')||'').toLowerCase();
+    if((r.status===404 || !ct.includes('application/json')) && DIRECT[path]){
+      r=await request(DIRECT[path],idToken,body);
+    }
+  }catch(e){
+    if(e?.name==='AbortError')throw new Error('El servidor de firma no respondió en 20 segundos. Verifica que las Functions estén desplegadas.');
+    // Si el primer intento falló por red/CORS, probamos una vez la URL directa.
+    if(DIRECT[path]){
+      try{r=await request(DIRECT[path],idToken,body)}catch(e2){
+        if(e2?.name==='AbortError')throw new Error('La Function de firma no respondió en 20 segundos.');
+        throw new Error('No fue posible contactar la Function de firma de Firebase. Revisa el despliegue de Functions y CORS.');
+      }
+    }else throw new Error('No fue posible contactar al servidor de firma.');
   }
   const text=await r.text();
   let out;
