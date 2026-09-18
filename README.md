@@ -35,4 +35,4 @@ Para habilitar la aceptación remota deben desplegarse también las reglas de `f
 - Añade envío del enlace individual por WhatsApp como canal alternativo inmediato.
 
 ## v0.8.63 · Portal de Firmas por usuario
-Las cuentas Firmante ya no requieren correo personal. Cada firmante usa nombre de usuario institucional, contraseña y PIN de firma. Las actas se asignan al usuario/UID y WhatsApp puede utilizarse sólo como aviso opcional.
+Las cuentas Firmante ya no requieren correo personal. Cada firmante usa nombre de usuario institucional y contraseña. Las actas se asignan al usuario/UID y WhatsApp puede utilizarse sólo como aviso opcional.

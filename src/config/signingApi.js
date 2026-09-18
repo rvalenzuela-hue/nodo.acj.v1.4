@@ -5,7 +5,6 @@ const REGION=import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1';
 const FUNCTION_BASE=(import.meta.env.VITE_FIREBASE_FUNCTIONS_BASE_URL || `https://${REGION}-${PROJECT_ID}.cloudfunctions.net`).replace(/\/$/,'');
 const DIRECT={
   '/api/manage-signer':`${FUNCTION_BASE}/manageSigner`,
-  '/api/signing-pin':`${FUNCTION_BASE}/signingPin`,
   '/api/sign-acta':`${FUNCTION_BASE}/signActa`,
 };
 
@@ -56,5 +55,4 @@ async function call(path,body){
   return out;
 }
 export const manageSignerAccount=(body)=>call('/api/manage-signer',body);
-export const setSigningPin=(body)=>call('/api/signing-pin',body);
-export const signActaWithPin=(body)=>call('/api/sign-acta',body);
+export const signActa=(body)=>call('/api/sign-acta',body);

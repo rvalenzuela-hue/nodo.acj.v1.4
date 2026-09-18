@@ -13,7 +13,7 @@ if errorlevel 1 (
 echo Proyecto: sigeac-1fc0c
 firebase use sigeac-1fc0c
 if errorlevel 1 goto :error
-firebase deploy --only functions:manageSigner,functions:signingPin,functions:signActa,firestore:rules --project sigeac-1fc0c
+firebase deploy --only functions:manageSigner,functions:signActa,firestore:rules --project sigeac-1fc0c
 if errorlevel 1 goto :error
 echo.
 echo LISTO. Functions de firma desplegadas.

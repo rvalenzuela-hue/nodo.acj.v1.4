@@ -319,7 +319,7 @@ function FirmasPanel(){
   return <div style={{display:'grid',gap:14}}>
     <section style={{background:'#fff',border:`1px solid ${border}`,borderRadius:12,padding:18}}>
       <h2 style={{color:green,margin:'0 0 6px'}}>Portal de Firmas NODO</h2>
-      <p style={{margin:'0 0 14px',fontSize:13,color:muted}}>Acceso independiente para integrantes que deben revisar y firmar actas cerradas. Los firmantes ingresan con nombre de usuario, contraseña y PIN de firma; no requieren correo.</p>
+      <p style={{margin:'0 0 14px',fontSize:13,color:muted}}>Acceso independiente para integrantes que deben revisar y firmar actas cerradas. Los firmantes ingresan con nombre de usuario y contraseña; no requieren correo.</p>
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         <button style={btn('primary')} onClick={()=>window.open('/?firmas=1','_blank')}>Abrir Portal de Firmas</button>
         <button style={btn('secondary')} onClick={()=>{window.location.href='/?internal=1&tab=accesos'}}>Administrar cuentas firmantes</button>

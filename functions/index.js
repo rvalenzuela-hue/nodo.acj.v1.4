@@ -137,8 +137,8 @@ exports.sendActaEmail=onRequest({
       replyTo:SMTP_USER.value(),
       to:data.to,
       subject,
-      text:[saludo,"",intro,"","Ingresa al Portal de Firmas NODO, revisa la versión definitiva y firma con tu PIN:",data.link,"","El acceso requiere tu cuenta personal de NODO.","","Asociación de Comercio Justo Campos Bórquez A.C."].join("\n"),
-      html:`<div style="font-family:Arial,sans-serif;color:#263329;line-height:1.55;max-width:640px"><h2 style="color:#31533a">Documento pendiente de firma</h2><p>${escapeHtml(saludo)}</p><p>${escapeHtml(intro)}</p><p style="margin:24px 0"><a href="${escapeHtml(data.link)}" style="background:#3dad2d;color:#fff;text-decoration:none;padding:11px 16px;border-radius:7px;font-weight:bold">Abrir Portal de Firmas</a></p><p style="font-size:12px;color:#667268">El acceso requiere tu cuenta personal de NODO y tu PIN de firma.</p><p style="font-size:12px;color:#667268">Si el botón no abre, copia y pega este enlace en tu navegador:<br>${escapeHtml(data.link)}</p><p>Asociación de Comercio Justo Campos Bórquez A.C.</p></div>`
+      text:[saludo,"",intro,"","Ingresa al Portal de Firmas NODO, revisa la versión definitiva y firma desde tu cuenta autenticada:",data.link,"","El acceso requiere tu cuenta personal de NODO.","","Asociación de Comercio Justo Campos Bórquez A.C."].join("\n"),
+      html:`<div style="font-family:Arial,sans-serif;color:#263329;line-height:1.55;max-width:640px"><h2 style="color:#31533a">Documento pendiente de firma</h2><p>${escapeHtml(saludo)}</p><p>${escapeHtml(intro)}</p><p style="margin:24px 0"><a href="${escapeHtml(data.link)}" style="background:#3dad2d;color:#fff;text-decoration:none;padding:11px 16px;border-radius:7px;font-weight:bold">Abrir Portal de Firmas</a></p><p style="font-size:12px;color:#667268">El acceso requiere tu cuenta personal de NODO.</p><p style="font-size:12px;color:#667268">Si el botón no abre, copia y pega este enlace en tu navegador:<br>${escapeHtml(data.link)}</p><p>Asociación de Comercio Justo Campos Bórquez A.C.</p></div>`
     });
     const accepted=(info.accepted||[]).map(v=>String(v).toLowerCase());
     const rejected=(info.rejected||[]).map(v=>String(v));
@@ -180,8 +180,6 @@ async function activeNodoIdentity(decoded){
   return {email,...snap.data()};
 }
 
-function hashPin(pin,salt,iterations=180000){return crypto.pbkdf2Sync(String(pin),salt,iterations,32,'sha256').toString('hex');}
-function safeEqHex(a,b){try{const aa=Buffer.from(String(a),'hex'),bb=Buffer.from(String(b),'hex');return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);}catch{return false;}}
 function stable(value){
   if(Array.isArray(value))return '['+value.map(stable).join(',')+']';
   if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stable(value[k])).join(',')+'}';
@@ -221,31 +219,13 @@ exports.manageSigner=onRequest({region:'us-central1',cors:true,timeoutSeconds:30
   }catch(error){logger.error('manageSigner failed',{message:error?.message,code:error?.code});return res.status(error?.status||500).json({ok:false,error:'No fue posible crear o actualizar la cuenta firmante.'});}
 });
 
-exports.signingPin=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
-  if(req.method!=='POST'){res.set('Allow','POST');return res.status(405).json({ok:false,error:'Método no permitido.'});}
-  try{
-    const decoded=await verifyBearer(req),body=req.body&&typeof req.body==='object'?req.body:{};
-    const identity=await activeNodoIdentity(decoded);if(!identity)return res.status(403).json({ok:false,error:'Tu cuenta NODO no está activa.'});
-    const newPin=String(body.newPin||''),currentPin=String(body.currentPin||'');
-    if(!/^\d{6}$/.test(newPin))return res.status(400).json({ok:false,error:'El PIN debe tener exactamente 6 dígitos.'});
-    const ref=admin.firestore().collection('signerSecurity').doc(decoded.uid),snap=await ref.get(),now=new Date().toISOString();
-    if(snap.exists){const d=snap.data()||{};if(!/^\d{6}$/.test(currentPin))return res.status(400).json({ok:false,error:'Captura tu PIN actual para cambiarlo.'});const check=hashPin(currentPin,d.salt,d.iterations||180000);if(!safeEqHex(check,d.pinHash))return res.status(403).json({ok:false,error:'El PIN actual no es correcto.'});}
-    const salt=crypto.randomBytes(24).toString('hex'),iterations=180000,pinHash=hashPin(newPin,salt,iterations);
-    await ref.set({uid:decoded.uid,usuario:identity.usuario||'',salt,iterations,pinHash,updatedAt:now,failedAttempts:0,lockedUntil:null},{merge:false});
-    return res.status(200).json({ok:true,updatedAt:now});
-  }catch(error){logger.error('signingPin failed',{message:error?.message,code:error?.code});return res.status(error?.status||500).json({ok:false,error:error?.status===401?'Sesión no autorizada.':'No fue posible configurar el PIN.'});}
-});
-
 exports.signActa=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,memory:'256MiB'},async(req,res)=>{
   if(req.method!=='POST'){res.set('Allow','POST');return res.status(405).json({ok:false,error:'Método no permitido.'});}
   try{
     const decoded=await verifyBearer(req),body=req.body&&typeof req.body==='object'?req.body:{};
     const identity=await activeNodoIdentity(decoded);if(!identity)return res.status(403).json({ok:false,error:'Tu cuenta NODO no está activa.'});
-    const firmaId=clean(body.firmaId,250),pin=String(body.pin||'');if(!firmaId||!/^\d{6}$/.test(pin))return res.status(400).json({ok:false,error:'Documento o PIN incompleto.'});
-    const db=admin.firestore(),secRef=db.collection('signerSecurity').doc(decoded.uid),sec=await secRef.get();if(!sec.exists)return res.status(409).json({ok:false,error:'Primero configura tu PIN de firma.'});
-    const sd=sec.data()||{},nowMs=Date.now();if(sd.lockedUntil&&Date.parse(sd.lockedUntil)>nowMs)return res.status(429).json({ok:false,error:'PIN temporalmente bloqueado por intentos fallidos. Intenta más tarde.'});
-    const check=hashPin(pin,sd.salt,sd.iterations||180000);if(!safeEqHex(check,sd.pinHash)){const attempts=Number(sd.failedAttempts||0)+1;const locked=attempts>=5?new Date(nowMs+15*60*1000).toISOString():null;await secRef.set({failedAttempts:attempts>=5?0:attempts,lockedUntil:locked},{merge:true});return res.status(403).json({ok:false,error:locked?'PIN incorrecto. Se bloqueó la firma por 15 minutos.':'PIN de firma incorrecto.'});}
-    await secRef.set({failedAttempts:0,lockedUntil:null},{merge:true});
+    const firmaId=clean(body.firmaId,250);if(!firmaId)return res.status(400).json({ok:false,error:'Documento incompleto.'});
+    const db=admin.firestore();
     const ref=db.collection('actaFirmas').doc(firmaId),snap=await ref.get();if(!snap.exists)return res.status(404).json({ok:false,error:'El documento asignado ya no existe.'});const data=snap.data()||{};
     const usuario=normalizeUsername(identity.usuario||'');if(data.firmanteUid!==decoded.uid||normalizeUsername(data.usuarioFirmante||'')!==usuario)return res.status(403).json({ok:false,error:'Este documento está asignado a otra cuenta.'});
     if(data.estado==='Firmado')return res.status(409).json({ok:false,error:'Este documento ya fue firmado.'});
@@ -266,7 +246,7 @@ exports.signActa=onRequest({region:'us-central1',cors:true,timeoutSeconds:30,mem
       const ad=actaSnap.data()||{};
       if(ad.estado!=='Cerrada')throw new Error('El acta todavía no está cerrada.');
       if(Number(ad.versionDocumento||0)!==Number(data.versionDocumento||0))throw new Error('La versión asignada ya no coincide con la versión cerrada.');
-      const parts=(ad.participantes||[]).map(p=>p.id===data.participanteId?{...p,firmaEstado:'Firmado',conformidadEn:signedAt,firmaMetodo:'Firma electrónica institucional NODO',firmaNodo}:p);
+      const parts=(ad.participantes||[]).map(p=>{const sameId=!!data.participanteId&&p.id===data.participanteId;const sameToken=!!p.firmaToken&&p.firmaToken===firmaId;const sameUid=!!data.firmanteUid&&p.firmanteUid===data.firmanteUid;const sameUser=!!data.usuarioFirmante&&normalizeUsername(p.usuarioFirmante||'')===normalizeUsername(data.usuarioFirmante||'');return (sameId||sameToken||sameUid||sameUser)?{...p,firmaEstado:'Firmado',conformidadEn:signedAt,firmaMetodo:'Firma electrónica institucional NODO',firmaNodo}:p;});
       tx.set(ref,{estado:'Firmado',conformidadEn:signedAt,metodo:'Firma electrónica institucional NODO',declaracionAceptada:true,firmaNodo},{merge:true});
       tx.set(actaRef,{participantes:parts,actualizadoEn:signedAt},{merge:true});
     });

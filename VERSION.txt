@@ -1,1 +1,1 @@
-NODO Asociación v0.8.65 · FIX restablecimiento de contraseña de firmantes
+NODO Asociación v0.8.65 · FIX firma directa sin PIN
