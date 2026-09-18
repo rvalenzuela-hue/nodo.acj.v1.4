@@ -1,1 +1,1 @@
-NODO Asociación v0.8.65 · FIX FIRMA v1 (base Claude)
+NODO Asociación v0.8.65 · FIX restablecimiento de contraseña de firmantes

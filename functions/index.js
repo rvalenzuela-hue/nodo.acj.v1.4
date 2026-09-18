@@ -205,7 +205,14 @@ exports.manageSigner=onRequest({region:'us-central1',cors:true,timeoutSeconds:30
     let user;let created=false;
     if(previousEmail&&previousEmail!==email){try{user=await admin.auth().getUserByEmail(previousEmail);await admin.auth().updateUser(user.uid,{email,displayName:nombre||username,disabled:body.activo===false});}catch(e){if(e?.code!=='auth/user-not-found')throw e;}}
     if(!user){try{user=await admin.auth().getUserByEmail(email)}catch(e){if(e?.code!=='auth/user-not-found')throw e;if(password.length<8)return res.status(400).json({ok:false,error:'Para una cuenta nueva captura una contraseña temporal de al menos 8 caracteres.'});user=await admin.auth().createUser({email,password,displayName:nombre||username,emailVerified:false,disabled:false});created=true;}}
-    if(!created){await admin.auth().updateUser(user.uid,{displayName:nombre||user.displayName||username,disabled:body.activo===false});}
+    if(!created){
+      const updates={displayName:nombre||user.displayName||username,disabled:body.activo===false};
+      if(body.resetPassword===true){
+        if(password.length<8)return res.status(400).json({ok:false,error:'La nueva contraseña temporal debe tener al menos 8 caracteres.'});
+        updates.password=password;
+      }
+      await admin.auth().updateUser(user.uid,updates);
+    }
     const now=new Date().toISOString(),db=admin.firestore();
     const profileId=email;
     await db.collection('usuariosNodo').doc(profileId).set({email,usuario:username,nombre:nombre||user.displayName||'',cargo,alcance:'Firmas',rol:'Firmante',activo:body.activo!==false,uid:user.uid,actualizadoEn:now,otorgadoPor:decoded.email||decoded.uid},{merge:true});
